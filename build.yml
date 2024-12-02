@@ -1,0 +1,34 @@
+name: build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Label of the container job
+  container-job:
+    # Containers must run in Linux based operating systems
+    runs-on: ubuntu-latest
+    environment: TEL
+    # Docker Hub image that `container-job` executes in
+    container: nexgang/ubuntu:latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3      
+      - name: Check out repository code
+        uses: actions/checkout@v3
+        with:
+          repository: MotorolaMobilityLLC/kernel-msm
+          ref: android-12-release-s3rxc32.33-8-25
+          path: msm-5.4
+      - name: build
+        run: |
+          mkdir kernel         
+          mv msm-5.4 kernel/ 
+          bash build2.sh
+        env:
+          token: ${{secrets.TOKEN}}
+          chat_id: ${{secrets.CHAT_ID}}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel
+          path: out/target/product/generic/obj/kernel/msm-5.4/arch/arm64/boot/      
