@@ -1,4 +1,4 @@
-name: Build FFmpeg (audio only, musl static) for ARM64
+name: Build FFmpeg (audio only, musl static) on Ubuntu ARM
 
 on:
   workflow_dispatch:
@@ -13,47 +13,48 @@ jobs:
           repository: FFmpeg/FFmpeg
           fetch-depth: 1
 
-      - name: Build static binary in Alpine container
+      - name: Install musl toolchain and dependencies
         run: |
-          docker run --rm -v $PWD:/work -w /work alpine:latest /bin/sh -c '
-            # 更新包索引并安装编译工具链
-            apk update
-            apk add --no-cache --update \
-              build-base \
-              linux-headers \
-              pkgconfig \
-              yasm nasm \
-              opus-dev vorbis-dev lame-dev fdk-aac-dev speex-dev \
-              make binutils
+          sudo apt-get update
+          sudo apt-get install -y \
+            make \
+            musl-tools \
+            pkg-config \
+            yasm nasm \
+            libopus-dev \
+            libvorbis-dev \
+            libmp3lame-dev \
+            libfdk-aac-dev \
+            libspeex-dev
 
-            # 配置 FFmpeg（仅音频相关）
-            ./configure \
-              --enable-static \
-              --disable-shared \
-              --disable-everything \
-              --enable-demuxer=mov,mp3,aac,flac,ogg,wav,matroska \
-              --enable-decoder=mp3,aac,flac,vorbis,opus,pcm_*,ac3 \
-              --enable-filter=aresample,atrim,asplit,astreamselect,volume,pan \
-              --enable-protocol=file \
-              --disable-programs \
-              --enable-ffmpeg \
-              --enable-avcodec \
-              --enable-avformat \
-              --enable-avfilter \
-              --enable-swresample \
-              --disable-avdevice \
-              --disable-swscale \
-              --disable-doc \
-              --extra-cflags="-static -march=armv8-a" \
-              --extra-ldflags="-static" \
-              --pkg-config-flags="--static"
+      - name: Configure FFmpeg (static, audio only)
+        run: |
+          ./configure \
+            --cc=musl-gcc \
+            --enable-static \
+            --disable-shared \
+            --disable-everything \
+            --enable-demuxer=mov,mp3,aac,flac,ogg,wav,matroska \
+            --enable-decoder=mp3,aac,flac,vorbis,opus,pcm_*,ac3 \
+            --enable-filter=aresample,atrim,asplit,astreamselect,volume,pan \
+            --enable-protocol=file \
+            --disable-programs \
+            --enable-ffmpeg \
+            --enable-avcodec \
+            --enable-avformat \
+            --enable-avfilter \
+            --enable-swresample \
+            --disable-avdevice \
+            --disable-swscale \
+            --disable-doc \
+            --extra-cflags="-static -march=armv8-a" \
+            --extra-ldflags="-static"
 
-            # 编译
-            make -j$(nproc)
+      - name: Build
+        run: make -j$(nproc)
 
-            # 去除调试符号
-            strip ffmpeg
-          '
+      - name: Strip debug symbols
+        run: strip ffmpeg
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
