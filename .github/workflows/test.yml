@@ -1,8 +1,7 @@
 name: Build FFmpeg (audio extraction only) for ARM64
 
 on:
-  push:
-    branches: [ main, master ]
+
   workflow_dispatch:   # 允许手动触发
 
 jobs:
