@@ -1,68 +1,62 @@
 name: Build FFmpeg (audio only, musl static) for ARM64
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest   # 使用 x86_64 runner 交叉编译
+    runs-on: ubuntu-24.04-arm   # GitHub 官方 ARM64 runner
     steps:
       - name: Checkout FFmpeg source
         uses: actions/checkout@v4
         with:
           repository: FFmpeg/FFmpeg
-          ref: master
           fetch-depth: 1
 
-      - name: Download musl cross-compiler for aarch64
+      - name: Build static binary in Alpine container
         run: |
-          wget https://musl.cc/aarch64-linux-musl-cross.tgz
-          tar -xzf aarch64-linux-musl-cross.tgz
-          echo "$PWD/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
+          docker run --rm -v $PWD:/work -w /work alpine:latest /bin/sh -c '
+            # 更新包索引并安装编译工具链
+            apk update
+            apk add --no-cache --update \
+              build-base \
+              linux-headers \
+              pkgconfig \
+              yasm nasm \
+              opus-dev vorbis-dev lame-dev fdk-aac-dev speex-dev \
+              make binutils
 
-      - name: Install dependencies (native libs for build)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config
+            # 配置 FFmpeg（仅音频相关）
+            ./configure \
+              --enable-static \
+              --disable-shared \
+              --disable-everything \
+              --enable-demuxer=mov,mp3,aac,flac,ogg,wav,matroska \
+              --enable-decoder=mp3,aac,flac,vorbis,opus,pcm_*,ac3 \
+              --enable-filter=aresample,atrim,asplit,astreamselect,volume,pan \
+              --enable-protocol=file \
+              --disable-programs \
+              --enable-ffmpeg \
+              --enable-avcodec \
+              --enable-avformat \
+              --enable-avfilter \
+              --enable-swresample \
+              --disable-avdevice \
+              --disable-swscale \
+              --disable-doc \
+              --extra-cflags="-static -march=armv8-a" \
+              --extra-ldflags="-static" \
+              --pkg-config-flags="--static"
 
-      - name: Configure FFmpeg
-        run: |
-          ./configure \
-            --arch=arm64 \
-            --target-os=linux \
-            --cross-prefix=aarch64-linux-musl- \
-            --enable-cross-compile \
-            --enable-static \
-            --disable-shared \
-            --disable-everything \
-            --enable-demuxer=mov,mp3,aac,flac,ogg,wav,matroska \
-            --enable-decoder=mp3,aac,flac,vorbis,opus,pcm_*,ac3 \
-            --enable-filter=aresample,atrim,asplit,astreamselect,volume,pan \
-            --enable-protocol=file \
-            --disable-programs \
-            --enable-ffmpeg \
-            --enable-avcodec \
-            --enable-avformat \
-            --enable-avfilter \
-            --enable-swresample \
-            --disable-avdevice \
-            --disable-swscale \
-            --disable-doc \
-            --extra-cflags="-static" \
-            --extra-ldflags="-static" \
-            --pkg-config-flags="--static"
+            # 编译
+            make -j$(nproc)
 
-      - name: Build
-        run: make -j$(nproc)
-
-      - name: Strip debug symbols
-        run: aarch64-linux-musl-strip ffmpeg
+            # 去除调试符号
+            strip ffmpeg
+          '
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-audio-arm64-musl-static
           path: ffmpeg
-          if-no-files-found: error
