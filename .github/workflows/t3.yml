@@ -1,54 +1,32 @@
 name: Build FFmpeg ARM64 musl static
 
-on:
-  workflow_dispatch:
+on:  workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-arm64  # GitHub 官方 ARM64 运行器
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Download musl cross toolchain (aarch64-linux-musl)
+      - name: Build FFmpeg statically with musl
         run: |
-          wget https://musl.cc/aarch64-linux-musl-cross.tgz
-          tar -xzf aarch64-linux-musl-cross.tgz -C /tmp
-          echo "/tmp/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
-
-      - name: Build FFmpeg
-        run: |
-          # 设置交叉编译环境变量
-          export CROSS_PREFIX=aarch64-linux-musl-
-          export CC=${CROSS_PREFIX}gcc
-          export CXX=${CROSS_PREFIX}g++
-          export AR=${CROSS_PREFIX}ar
-          export RANLIB=${CROSS_PREFIX}ranlib
-          export PKG_CONFIG=pkg-config
-
-          # 下载 FFmpeg 源码（可替换版本）
           wget https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz
           tar -xf ffmpeg-6.1.1.tar.xz
           cd ffmpeg-6.1.1
-
-          # 配置编译选项
           ./configure \
             --arch=aarch64 \
             --target-os=linux \
-            --cross-prefix=${CROSS_PREFIX} \
-            --enable-cross-compile \
-            --disable-asm \
             --disable-shared \
             --enable-static \
-            --pkg-config-flags="--static" \
-            --prefix=/tmp/ffmpeg-build \
-            --extra-cflags="-static" \
-            --extra-ldflags="-static"
-
+            --extra-ldflags="-static" \
+            --cc=musl-gcc \
+            --cxx=musl-g++ \
+            --prefix=/tmp/ffmpeg-build
           make -j$(nproc)
           make install
 
-      - name: Upload static binary
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-arm64-musl-static
