@@ -36,7 +36,7 @@ jobs:
             --disable-everything \
             --enable-demuxer=mov,mp3,aac,flac,ogg,wav,matroska \
             --enable-decoder=mp3,aac,flac,vorbis,opus,pcm_*,ac3 \
-            --enable-muxer=mp4,ipod,adts,rawaudio \
+            --enable-muxer=mov,mp4,ipod,adts,rawaudio \
             --enable-filter=aresample,atrim,asplit,astreamselect,volume,pan \
             --enable-protocol=file \
             --disable-programs \
