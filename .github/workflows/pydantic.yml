@@ -1,4 +1,4 @@
-name: Build pydantic-core for Android
+name: Build pydantic-core for Android Termux
 
 on:
   workflow_dispatch:  # 手动触发
@@ -8,15 +8,29 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 目标架构，Termux 手机通常是 aarch64
-        target: [aarch64-linux-android, armv7-linux-androideabi]
+        include:
+          - target: aarch64-linux-android
+            arch: aarch64
+            ndk_arch: aarch64-linux-android
+            py_arch: aarch64
+          - target: armv7-linux-androideabi
+            arch: armv7a
+            ndk_arch: armv7a-linux-androideabi
+            py_arch: armv7l
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout pydantic-core
+        run: |
+          git clone --depth 1 https://github.com/pydantic/pydantic-core
+          cd pydantic-core
+          # 可选：指定特定版本，如 v2.14.1
+          # git checkout v2.14.1
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -24,29 +38,52 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
-      - name: Install NDK & set env
+      - name: Setup Android NDK
         run: |
-          # 下载并设置 Android NDK
-          wget https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
-          unzip android-ndk-r26b-linux.zip
-          echo "NDK_HOME=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
-          echo "ANDROID_NDK=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
+          wget -q https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+          unzip -q android-ndk-r26d-linux.zip
+          echo "NDK_HOME=$(pwd)/android-ndk-r26d" >> $GITHUB_ENV
+
+      - name: Set linker for cross compilation
+        run: |
+          NDK=${{ env.NDK_HOME }}
+          API=21
+          
+          if [ "${{ matrix.target }}" = "aarch64-linux-android" ]; then
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android$API-clang" >> $GITHUB_ENV
+          else
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi$API-clang" >> $GITHUB_ENV
+          fi
+
+      - name: Install maturin
+        run: |
+          pip install maturin
 
       - name: Build wheel
-        env:
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
-          CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER: ${{ env.NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
+        working-directory: ./pydantic-core
         run: |
-          # 安装 maturin 用于构建 Rust 的 Python 包
-          pip install maturin
-          # 克隆源码并切换版本
-          git clone https://github.com/pydantic/pydantic-core
-          cd pydantic-core
-          # 为目标架构构建 wheel
-          maturin build --target ${{ matrix.target }} --release --out dist
+          # 为交叉编译设置环境变量
+          export PYO3_CROSS=1
+          export PYO3_CROSS_TARGET=${{ matrix.target }}
+          export PYO3_CROSS_PYTHON_VERSION=3.11
+          export PYO3_CROSS_LIB_DIR="/usr/${{ matrix.ndk_arch }}/lib"
           
-      - name: Upload Artifact
+          # 构建 wheel
+          maturin build \
+            --target ${{ matrix.target }} \
+            --release \
+            --interpreter python3.11 \
+            --out dist \
+            --compatibility manylinux_2_28 \
+            --no-sdist
+
+      - name: List built wheels
+        run: |
+          ls -la pydantic-core/dist/
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.target }}
+          name: pydantic-core-wheels-${{ matrix.arch }}
           path: pydantic-core/dist/*.whl
+          retention-days: 90
