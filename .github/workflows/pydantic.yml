@@ -1,0 +1,52 @@
+name: Build pydantic-core for Android
+
+on:
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 目标架构，Termux 手机通常是 aarch64
+        target: [aarch64-linux-android, armv7-linux-androideabi]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Install NDK & set env
+        run: |
+          # 下载并设置 Android NDK
+          wget https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+          unzip android-ndk-r26b-linux.zip
+          echo "NDK_HOME=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
+          echo "ANDROID_NDK=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
+
+      - name: Build wheel
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ env.NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+          CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER: ${{ env.NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
+        run: |
+          # 安装 maturin 用于构建 Rust 的 Python 包
+          pip install maturin
+          # 克隆源码并切换版本
+          git clone https://github.com/pydantic/pydantic-core
+          cd pydantic-core
+          # 为目标架构构建 wheel
+          maturin build --target ${{ matrix.target }} --release --out dist
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}
+          path: pydantic-core/dist/*.whl
