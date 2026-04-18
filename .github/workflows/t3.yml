@@ -2,6 +2,7 @@ name: Build FFmpeg (common components, musl static) on Ubuntu ARM
 
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
@@ -28,23 +29,53 @@ jobs:
             libtool \
             wget \
             git \
-            # 常用视频编码器
-            libx264-dev \
-            libx265-dev \
-            libvpx-dev \
-            # 常用音频编码器
+            cmake \
+            curl
+
+      - name: Build libx264 from source
+        run: |
+          cd /tmp
+          git clone --depth 1 https://code.videolan.org/videolan/x264.git
+          cd x264
+          ./configure --prefix=/usr --enable-static --disable-shared --disable-cli
+          make -j$(nproc)
+          sudo make install
+
+      - name: Build libx265 from source
+        run: |
+          cd /tmp
+          git clone --depth 1 https://bitbucket.org/multicoreware/x265_git.git
+          cd x265_git/build/linux
+          cmake -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_SHARED=OFF -DENABLE_CLI=OFF ../../source
+          make -j$(nproc)
+          sudo make install
+
+      - name: Build libvpx from source
+        run: |
+          cd /tmp
+          git clone --depth 1 https://chromium.googlesource.com/webm/libvpx
+          cd libvpx
+          ./configure --prefix=/usr --enable-static --disable-shared --disable-tools --disable-examples --disable-docs
+          make -j$(nproc)
+          sudo make install
+
+      - name: Install audio codecs
+        run: |
+          sudo apt-get install -y \
             libmp3lame-dev \
             libopus-dev \
             libvorbis-dev \
             libfdk-aac-dev \
-            # 常用工具库
             libfreetype-dev \
             libfontconfig-dev \
             libass-dev \
             libssl-dev \
             libsdl2-dev \
             libpng-dev \
-            libjpeg-dev
+            libjpeg-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblzma-dev
 
       - name: Setup environment
         run: |
@@ -52,8 +83,10 @@ jobs:
           echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
           mkdir -p build_output
 
-      - name: Configure FFmpeg (common components)
+      - name: Configure FFmpeg
         run: |
+          export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+          
           ./configure \
             --prefix=$(pwd)/build_output \
             --cc=musl-gcc \
@@ -78,7 +111,6 @@ jobs:
             --enable-demuxers \
             --enable-parsers \
             --enable-bsfs \
-            --enable-hwaccels \
             --enable-asm \
             --enable-neon \
             --enable-runtime-cpudetect \
@@ -98,8 +130,8 @@ jobs:
             --enable-lzma \
             --enable-iconv \
             --enable-sdl2 \
-            --extra-cflags="-static -O3 -march=armv8-a -mtune=cortex-a72 -ffast-math -pipe" \
-            --extra-ldflags="-static -s" \
+            --extra-cflags="-static -O3 -march=armv8-a -mtune=cortex-a72 -I/usr/include -I/usr/local/include" \
+            --extra-ldflags="-static -L/usr/lib -L/usr/local/lib" \
             --extra-libs="-static -lpthread -lm"
 
       - name: Build FFmpeg
@@ -112,19 +144,11 @@ jobs:
           strip --strip-all build_output/bin/ffmpeg
           strip --strip-all build_output/bin/ffplay
           strip --strip-all build_output/bin/ffprobe
-          
-          # 可选压缩（减小体积）
-          sudo apt-get install -y upx || true
-          if command -v upx &> /dev/null; then
-            upx --best --lzma build_output/bin/ffmpeg 2>/dev/null || true
-          fi
-          
-          # 查看最终大小
           ls -lh build_output/bin/
 
       - name: Create version info
         run: |
-          cat > build_output/bin/README.txt << EOF
+          cat > build_output/bin/README.txt << 'EOF'
           ====================================
           FFmpeg Static Build (ARM64 / musl)
           ====================================
@@ -132,47 +156,16 @@ jobs:
           版本: ${{ env.FFMPEG_VERSION }}
           构建日期: ${{ env.BUILD_DATE }}
           架构: ARM64 (aarch64)
-          运行库: musl (静态链接，无需依赖)
           
           包含组件:
-          ----------
-          视频编码: H.264/H.265 (x264/x265), VP8/VP9 (libvpx)
-          音频编码: MP3, AAC, Opus, Vorbis, FLAC, PCM
-          容器格式: MP4, MOV, MKV, AVI, FLV, WebM, OGG, WAV
-          滤镜: 常用滤镜 (缩放、裁剪、水印、字幕等)
-          协议: HTTP/HTTPS, RTMP, RTSP, FILE
-          字幕: ASS/SSA 字幕支持
+          - H.264/H.265 编解码
+          - VP8/VP9 编解码
+          - MP3/AAC/Opus/Vorbis 音频
+          - 常用滤镜和字幕支持
+          - HTTPS/RTMP 推流
           
-          使用示例:
-          ----------
-          # 转换视频格式
-          ./ffmpeg -i input.mp4 -c:v libx264 -c:a aac output.mp4
-          
-          # 压缩视频
-          ./ffmpeg -i input.mp4 -c:v libx264 -crf 23 -preset medium output.mp4
-          
-          # 提取音频
-          ./ffmpeg -i video.mp4 -vn -c:a libmp3lame audio.mp3
-          
-          # 调整分辨率
-          ./ffmpeg -i input.mp4 -vf scale=1280:720 output.mp4
-          
-          # 添加字幕
-          ./ffmpeg -i input.mp4 -vf subtitles=subtitle.srt output.mp4
-          
-          # 截取片段
-          ./ffmpeg -i input.mp4 -ss 00:01:00 -t 00:00:30 clip.mp4
-          
-          # 合并多个视频
-          ./ffmpeg -f concat -i filelist.txt -c copy merged.mp4
-          
-          # 推流到 RTMP
-          ./ffmpeg -i input.mp4 -f flv rtmp://live.twitch.tv/app/stream_key
-          
-          二进制文件:
-          - ffmpeg: 主要工具
-          - ffplay: 简易播放器
-          - ffprobe: 媒体信息查看
+          使用方法:
+          ./ffmpeg -i input.mp4 output.mp4
           EOF
 
       - name: Package artifact
@@ -192,37 +185,3 @@ jobs:
             build_output/bin/ffmpeg-common-arm64-musl-static.tar.gz
             checksum.txt
           retention-days: 90
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            build_output/bin/ffmpeg-common-arm64-musl-static.tar.gz
-            checksum.txt
-          draft: false
-          prerelease: false
-          tag_name: ffmpeg-${{ env.FFMPEG_VERSION }}-${{ env.BUILD_DATE }}
-          name: "FFmpeg ${{ env.FFMPEG_VERSION }} - ARM64 静态编译"
-          body: |
-            ## FFmpeg 常用组件版 - ARM64 静态编译
-            
-            ### 包含功能：
-            - ✅ H.264 / H.265 编解码
-            - ✅ VP8 / VP9 编解码  
-            - ✅ MP3 / AAC / Opus / Vorbis 音频
-            - ✅ 常用滤镜（缩放、裁剪、水印、字幕）
-            - ✅ RTMP / HTTP / HTTPS 推流拉流
-            - ✅ 字幕支持 (ASS/SSA)
-            
-            ### 使用方法：
-            下载后解压即可使用，无需安装任何依赖：
-            ```bash
-            tar -xzf ffmpeg-common-arm64-musl-static.tar.gz
-            cd ffmpeg-common-arm64-musl-static
-            ./ffmpeg -version
-            ```
-            
-            ### 文件信息：
-            - SHA256: 见 checksum.txt
-            - 大小: 约 25-35 MB
