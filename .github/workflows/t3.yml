@@ -59,7 +59,7 @@ jobs:
           make -j$(nproc)
           sudo make install
 
-      - name: Install audio codecs
+      - name: Install audio codecs and libraries
         run: |
           sudo apt-get install -y \
             libmp3lame-dev \
@@ -101,7 +101,6 @@ jobs:
             --enable-ffprobe \
             --enable-avdevice \
             --enable-swscale \
-            --enable-postproc \
             --enable-network \
             --enable-protocols \
             --enable-filters \
@@ -132,7 +131,7 @@ jobs:
             --enable-sdl2 \
             --extra-cflags="-static -O3 -march=armv8-a -mtune=cortex-a72 -I/usr/include -I/usr/local/include" \
             --extra-ldflags="-static -L/usr/lib -L/usr/local/lib" \
-            --extra-libs="-static -lpthread -lm"
+            --extra-libs="-lpthread -lm"
 
       - name: Build FFmpeg
         run: |
@@ -148,7 +147,7 @@ jobs:
 
       - name: Create version info
         run: |
-          cat > build_output/bin/README.txt << 'EOF'
+          cat > build_output/bin/README.txt << EOF
           ====================================
           FFmpeg Static Build (ARM64 / musl)
           ====================================
@@ -174,7 +173,6 @@ jobs:
           tar -czf ffmpeg-common-arm64-musl-static.tar.gz ffmpeg ffplay ffprobe README.txt
           cd ../..
           
-          # 计算 SHA256
           sha256sum build_output/bin/ffmpeg-common-arm64-musl-static.tar.gz > checksum.txt
 
       - name: Upload artifact
