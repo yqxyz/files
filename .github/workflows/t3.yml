@@ -39,9 +39,9 @@ jobs:
             --cxx=musl-g++ \
             --enable-static \
             --disable-shared \
+            --disable-ffplay \
             --enable-gpl \
             --enable-ffmpeg \
-            --enable-ffplay \
             --enable-ffprobe \
             --enable-avdevice \
             --enable-swscale \
@@ -68,13 +68,12 @@ jobs:
       - name: Strip binaries
         run: |
           strip --strip-all build_output/bin/ffmpeg
-          strip --strip-all build_output/bin/ffplay
           strip --strip-all build_output/bin/ffprobe
 
       - name: Package artifact
         run: |
           cd build_output/bin
-          tar -czf ffmpeg-builtin-arm64-musl-static.tar.gz ffmpeg ffplay ffprobe
+          tar -czf ffmpeg-builtin-arm64-musl-static.tar.gz ffmpeg ffprobe
           cd ../..
           sha256sum build_output/bin/ffmpeg-builtin-arm64-musl-static.tar.gz > checksum.txt
 
