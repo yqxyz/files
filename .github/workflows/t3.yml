@@ -30,11 +30,219 @@ jobs:
             wget \
             git \
             cmake \
-            curl
+            curl \
+            patchelf \
+            file \
+            binutils
 
       - name: Build libx264 from source
         run: |
           cd /tmp
+          git clone --depth 1 https://code.videolan.org/videolan/x264.git
+          cd x264
+          ./configure --prefix=/usr --enable-static --disable-shared --disable-cli
+          make -j$(nproc)
+          sudo make install
+
+      - name: Build libx265 from source
+        run: |
+          cd /tmp
+          git clone --depth 1 https://bitbucket.org/multicoreware/x265_git.git
+          cd x265_git/build/linux
+          cmake -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_SHARED=OFF -DENABLE_CLI=OFF ../../source
+          make -j$(nproc)
+          sudo make install
+
+      - name: Build libvpx from source
+        run: |
+          cd /tmp
+          git clone --depth 1 https://chromium.googlesource.com/webm/libvpx
+          cd libvpx
+          ./configure --prefix=/usr --enable-static --disable-shared --disable-tools --disable-examples --disable-docs
+          make -j$(nproc)
+          sudo make install
+
+      - name: Install audio codecs and libraries
+        run: |
+          sudo apt-get install -y \
+            libmp3lame-dev \
+            libopus-dev \
+            libvorbis-dev \
+            libfdk-aac-dev \
+            libfreetype-dev \
+            libfontconfig-dev \
+            libass-dev \
+            libssl-dev \
+            libsdl2-dev \
+            libpng-dev \
+            libjpeg-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblzma-dev
+
+      - name: Setup environment
+        run: |
+          echo "FFMPEG_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 'git-master')" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+          mkdir -p build_output
+
+      - name: Test C11 support
+        run: |
+          # 测试 musl-gcc 是否支持 C11
+          echo '#include <stdatomic.h>
+          int main() { 
+            atomic_int a = 0;
+            atomic_fetch_add(&a, 1);
+            return 0; 
+          }' | musl-gcc -std=c11 -x c -o /dev/null - 2>/dev/null
+          
+          if [ $? -eq 0 ]; then
+            echo "C11_SUPPORT=yes" >> $GITHUB_ENV
+            echo "C11_FLAG=-std=c11" >> $GITHUB_ENV
+          else
+            echo "C11_SUPPORT=no" >> $GITHUB_ENV
+            echo "C11_FLAG=-std=gnu11" >> $GITHUB_ENV
+          fi
+
+      - name: Configure FFmpeg
+        run: |
+          export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
+          
+          ./configure \
+            --prefix=$(pwd)/build_output \
+            --cc=musl-gcc \
+            --cxx=musl-g++ \
+            --enable-static \
+            --disable-shared \
+            --enable-gpl \
+            --enable-version3 \
+            --enable-nonfree \
+            --enable-ffmpeg \
+            --enable-ffplay \
+            --enable-ffprobe \
+            --enable-avdevice \
+            --enable-swscale \
+            --enable-network \
+            --enable-protocols \
+            --enable-filters \
+            --enable-encoders \
+            --enable-decoders \
+            --enable-muxers \
+            --enable-demuxers \
+            --enable-parsers \
+            --enable-bsfs \
+            --enable-asm \
+            --enable-neon \
+            --enable-runtime-cpudetect \
+            --enable-libx264 \
+            --enable-libx265 \
+            --enable-libvpx \
+            --enable-libmp3lame \
+            --enable-libopus \
+            --enable-libvorbis \
+            --enable-libfdk-aac \
+            --enable-libfreetype \
+            --enable-libfontconfig \
+            --enable-libass \
+            --enable-openssl \
+            --enable-zlib \
+            --enable-bzlib \
+            --enable-lzma \
+            --enable-iconv \
+            --enable-sdl2 \
+            --extra-cflags="-static ${{ env.C11_FLAG }} -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L -O2 -march=armv8-a -mtune=cortex-a72 -I/usr/include -I/usr/local/include" \
+            --extra-ldflags="-static -all-static -L/usr/lib -L/usr/local/lib" \
+            --extra-libs="-lpthread -lm -ldl"
+
+      - name: Build FFmpeg
+        run: |
+          make -j$(nproc)
+          make install
+
+      - name: Strip binaries
+        run: |
+          strip --strip-all build_output/bin/ffmpeg
+          strip --strip-all build_output/bin/ffplay
+          strip --strip-all build_output/bin/ffprobe
+          ls -lh build_output/bin/
+
+      - name: Make Termux compatible
+        run: |
+          # 为每个二进制文件添加 Termux 兼容性
+          for binary in build_output/bin/ffmpeg build_output/bin/ffplay build_output/bin/ffprobe; do
+            if [ -f "$binary" ]; then
+              # 检查二进制文件类型
+              file "$binary"
+              
+              # 完全静态的二进制文件不需要修改链接器路径
+              # 但为了兼容性，确保可执行权限
+              chmod 755 "$binary"
+              
+              # 验证静态链接
+              ldd "$binary" 2>&1 | grep -q "not a dynamic executable" && echo "✓ Static binary confirmed: $(basename $binary)"
+            fi
+          done
+
+      - name: Create version info
+        run: |
+          cat > build_output/bin/README.txt << 'EOF'
+          ====================================
+          FFmpeg Static Build (ARM64 / musl)
+          ====================================
+          
+          版本: ${{ env.FFMPEG_VERSION }}
+          构建日期: ${{ env.BUILD_DATE }}
+          架构: ARM64 (aarch64)
+          
+          包含组件:
+          - H.264/H.265 编解码
+          - VP8/VP9 编解码
+          - MP3/AAC/Opus/Vorbis 音频
+          - 常用滤镜和字幕支持
+          - HTTPS/RTMP 推流
+          
+          Termux 使用方法:
+          1. 解压文件:
+             tar -xzf ffmpeg-common-arm64-musl-static.tar.gz
+             cd bin
+          
+          2. 直接运行 (静态编译，无需额外依赖):
+             ./ffmpeg -version
+             ./ffmpeg -i input.mp4 output.mp4
+          
+          3. 移动到系统路径 (可选):
+             mv ffmpeg ffplay ffprobe $PREFIX/bin/
+          
+          注意事项:
+          - 这是完全静态编译的二进制文件，可以在 Termux 中直接运行
+          - 不需要安装任何额外的 FFmpeg 依赖包
+          - 如果遇到权限问题，请运行: chmod +x ffmpeg ffplay ffprobe
+          
+          支持的编解码器:
+          - 视频: H.264, H.265, VP8, VP9
+          - 音频: MP3, AAC, Opus, Vorbis
+          - 字幕: ASS, SRT
+          EOF
+
+      - name: Package artifact
+        run: |
+          cd build_output/bin
+          tar -czf ffmpeg-common-arm64-musl-static.tar.gz ffmpeg ffplay ffprobe README.txt
+          cd ../..
+          
+          sha256sum build_output/bin/ffmpeg-common-arm64-musl-static.tar.gz > checksum.txt
+          
+          # 显示文件大小
+          ls -lh build_output/bin/ffmpeg-common-arm64-musl-static.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-common-arm64-musl-static
+          path: |
+            build_output/bin/ffmpeg-common-arm64-musl-static.tar.gz
+            checksum.txt
+          retention-days: 90          cd /tmp
           git clone --depth 1 https://code.videolan.org/videolan/x264.git
           cd x264
           ./configure --prefix=/usr --enable-static --disable-shared --disable-cli
