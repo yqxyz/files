@@ -1,0 +1,339 @@
+name: Build FFmpeg (full features, musl static) on Ubuntu ARM
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 0 * * 0'  # 每周编译最新版本
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        arch: [arm64]
+        
+    steps:
+      - name: Checkout FFmpeg source
+        uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          fetch-depth: 1
+          ref: master
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            make \
+            musl-tools \
+            pkg-config \
+            yasm \
+            nasm \
+            autoconf \
+            automake \
+            libtool \
+            wget \
+            git \
+            cmake \
+            curl \
+            # 音频库
+            libopus-dev \
+            libvorbis-dev \
+            libmp3lame-dev \
+            libfdk-aac-dev \
+            libspeex-dev \
+            libopencore-amrnb-dev \
+            libopencore-amrwb-dev \
+            libvo-amrwbenc-dev \
+            # 视频库
+            libx264-dev \
+            libx265-dev \
+            libvpx-dev \
+            libaom-dev \
+            libsvtav1-dev \
+            libdav1d-dev \
+            libtheora-dev \
+            libwebp-dev \
+            libxvidcore-dev \
+            # 容器和协议
+            libsdl2-dev \
+            libssl-dev \
+            librtmp-dev \
+            libssh-dev \
+            libsmbclient-dev \
+            libzmq3-dev \
+            # 图像处理
+            libjpeg-dev \
+            libpng-dev \
+            libopenjp2-7-dev \
+            libtiff-dev \
+            # 其他
+            libfreetype-dev \
+            libfontconfig-dev \
+            libfribidi-dev \
+            libharfbuzz-dev \
+            libass-dev \
+            libbluray-dev \
+            libdrm-dev \
+            libgnutls28-dev \
+            libunistring-dev \
+            libva-dev \
+            libvdpau-dev \
+            libvulkan-dev \
+            libxcb-shm0-dev \
+            libxcb-xfixes0-dev \
+            libxcb-shape0-dev \
+            libcdio-paranoia-dev \
+            libgme-dev \
+            libgsm1-dev \
+            libmodplug-dev \
+            libopenmpt-dev \
+            libopusfile-dev \
+            librsvg2-dev \
+            libsoxr-dev \
+            libssh-dev \
+            libvidstab-dev \
+            libzimg-dev \
+            libzmq-dev \
+            libzvbi-dev \
+            liblcms2-dev \
+            libmysofa-dev \
+            libchromaprint-dev \
+            libcodec2-dev \
+            libbs2b-dev \
+            libflite-dev \
+            liblensfun-dev \
+            libnorm-dev \
+            libopenal-dev \
+            libpulse-dev \
+            libsndio-dev \
+            libtwolame-dev \
+            libwavpack-dev \
+            libcaca-dev \
+            libcelt-dev \
+            libdc1394-dev \
+            libgav1-dev \
+            libjxl-dev \
+            librist-dev \
+            libsrt-dev
+
+      - name: Setup environment
+        run: |
+          echo "FFMPEG_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 'git-master')" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
+          mkdir -p build_output
+
+      - name: Configure FFmpeg (full features, static)
+        run: |
+          ./configure \
+            --prefix=$(pwd)/build_output \
+            --cc=musl-gcc \
+            --cxx=musl-g++ \
+            --enable-static \
+            --disable-shared \
+            --enable-gpl \
+            --enable-version3 \
+            --enable-nonfree \
+            --enable-ffmpeg \
+            --enable-ffplay \
+            --enable-ffprobe \
+            --enable-ffserver \
+            --enable-postproc \
+            --enable-avdevice \
+            --enable-swscale \
+            --enable-pthreads \
+            --enable-w32threads \
+            --enable-os2threads \
+            --enable-network \
+            --enable-protocols \
+            --enable-indevs \
+            --enable-outdevs \
+            --enable-filters \
+            --enable-encoders \
+            --enable-decoders \
+            --enable-muxers \
+            --enable-demuxers \
+            --enable-parsers \
+            --enable-bsfs \
+            --enable-hwaccels \
+            --enable-asm \
+            --enable-inline-asm \
+            --enable-x86asm \
+            --enable-mmx \
+            --enable-neon \
+            --enable-runtime-cpudetect \
+            --enable-libx264 \
+            --enable-libx265 \
+            --enable-libvpx \
+            --enable-libaom \
+            --enable-libsvtav1 \
+            --enable-libdav1d \
+            --enable-libmp3lame \
+            --enable-libopus \
+            --enable-libvorbis \
+            --enable-libtheora \
+            --enable-libwebp \
+            --enable-libxvid \
+            --enable-libfdk-aac \
+            --enable-libspeex \
+            --enable-libopencore-amrnb \
+            --enable-libopencore-amrwb \
+            --enable-libvo-amrwbenc \
+            --enable-libfreetype \
+            --enable-libfontconfig \
+            --enable-libfribidi \
+            --enable-libharfbuzz \
+            --enable-libass \
+            --enable-libbluray \
+            --enable-libbs2b \
+            --enable-libcaca \
+            --enable-libcelt \
+            --enable-libcdio \
+            --enable-libchromaprint \
+            --enable-libcodec2 \
+            --enable-libdrm \
+            --enable-libflite \
+            --enable-libgme \
+            --enable-libgsm \
+            --enable-libjxl \
+            --enable-liblensfun \
+            --enable-libmodplug \
+            --enable-libmysofa \
+            --enable-libopenmpt \
+            --enable-libpulse \
+            --enable-librabbitmq \
+            --enable-librsvg \
+            --enable-librtmp \
+            --enable-librist \
+            --enable-libsmbclient \
+            --enable-libsnappy \
+            --enable-libsoxr \
+            --enable-libsrt \
+            --enable-libssh \
+            --enable-libtesseract \
+            --enable-libtwolame \
+            --enable-libvdpau \
+            --enable-libvidstab \
+            --enable-libvmaf \
+            --enable-libvulkan \
+            --enable-libzimg \
+            --enable-libzmq \
+            --enable-libzvbi \
+            --enable-lv2 \
+            --enable-opengl \
+            --enable-openssl \
+            --enable-pocketsphinx \
+            --enable-sdl2 \
+            --enable-vulkan \
+            --enable-vaapi \
+            --enable-vdpau \
+            --enable-videotoolbox \
+            --enable-zlib \
+            --enable-bzlib \
+            --enable-lzma \
+            --enable-iconv \
+            --enable-xlib \
+            --enable-cuda \
+            --enable-cuvid \
+            --enable-nvenc \
+            --enable-nvdec \
+            --extra-cflags="-static -O3 -march=armv8.2-a+crypto+rcpc+dotprod -mtune=cortex-a76 -ffast-math -funroll-loops -flto=auto -pipe" \
+            --extra-ldflags="-static -s -flto=auto" \
+            --extra-libs="-static -lpthread -lm -lz" \
+            --pkg-config-flags="--static"
+
+      - name: Build FFmpeg
+        run: |
+          make -j$(nproc)
+          make install
+
+      - name: Strip and compress binary
+        run: |
+          # Strip all debug symbols
+          strip --strip-all build_output/bin/ffmpeg
+          strip --strip-all build_output/bin/ffplay
+          strip --strip-all build_output/bin/ffprobe
+          
+          # Install UPX for compression
+          sudo apt-get install -y upx || true
+          if command -v upx &> /dev/null; then
+            upx --best --lzma --no-backup build_output/bin/ffmpeg
+            upx --best --lzma --no-backup build_output/bin/ffplay
+            upx --best --lzma --no-backup build_output/bin/ffprobe
+          fi
+          
+          # Verify binaries
+          file build_output/bin/ffmpeg
+          ldd build_output/bin/ffmpeg 2>&1 | head -5 || echo "Static binary - no dependencies"
+
+      - name: Create version info
+        run: |
+          cat > build_output/bin/version_info.txt << 'EOF'
+          ========================================
+          FFmpeg Static Build for ARM64 (musl)
+          ========================================
+          
+          Build Date: ${{ env.BUILD_DATE }}
+          FFmpeg Version: ${{ env.FFMPEG_VERSION }}
+          Architecture: ARM64 (aarch64)
+          C Library: musl (fully static)
+          
+          Features:
+          - Complete codecs: H.264, H.265, VP8, VP9, AV1, MPEG-4
+          - Audio codecs: AAC, MP3, FLAC, Opus, Vorbis, PCM
+          - Filters: Full filter suite
+          - Protocols: HTTP(S), RTMP, RTSP, SRT, RIST, UDP, TCP
+          - Hardware acceleration: VAAPI, VDPAU, CUDA
+          - Container formats: MP4, MKV, AVI, MOV, FLV, WebM
+          
+          Libraries included:
+          - libx264, libx265 (H.264/H.265 encoding)
+          - libvpx (VP8/VP9 encoding)
+          - libaom, libsvtav1, libdav1d (AV1)
+          - libmp3lame, libopus, libvorbis, libfdk-aac
+          - libass, libfreetype (subtitle rendering)
+          - openssl (HTTPS support)
+          - zlib, bzip2, lzma (compression)
+          
+          Usage examples:
+          # Convert video
+          ./ffmpeg -i input.mp4 -c:v libx264 -c:a aac output.mp4
+          
+          # Extract audio
+          ./ffmpeg -i input.mp4 -vn -acodec libmp3lame audio.mp3
+          
+          # Stream to RTMP
+          ./ffmpeg -i input.mp4 -f flv rtmp://server/live/stream
+          
+          # Hardware acceleration (VAAPI)
+          ./ffmpeg -hwaccel vaapi -i input.mp4 -c:v h264_vaapi output.mp4
+          EOF
+          
+          tar -czf ffmpeg-full-static-${{ env.BUILD_DATE }}.tar.gz \
+            -C build_output/bin \
+            ffmpeg ffplay ffprobe version_info.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-full-arm64-musl-static-${{ env.BUILD_DATE }}
+          path: |
+            ffmpeg-full-static-${{ env.BUILD_DATE }}.tar.gz
+            build_output/bin/ffmpeg
+            build_output/bin/ffplay
+            build_output/bin/ffprobe
+          retention-days: 90
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ffmpeg-full-static-${{ env.BUILD_DATE }}.tar.gz
+          draft: false
+          prerelease: false
+          tag_name: ffmpeg-${{ env.FFMPEG_VERSION }}-${{ env.BUILD_DATE }}
+          name: FFmpeg ${{ env.FFMPEG_VERSION }} - Full Static Build (ARM64)
+          body_path: build_output/bin/version_info.txt
