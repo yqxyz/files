@@ -2,10 +2,7 @@ name: Build FFmpeg (full features, musl static) on Ubuntu ARM
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
-  schedule:
-    - cron: '0 0 * * 0'  # 每周编译最新版本
+  
 
 jobs:
   build:
