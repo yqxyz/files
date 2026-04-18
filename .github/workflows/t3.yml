@@ -1,4 +1,4 @@
-name: Build FFmpeg (built-in only, musl static) on Ubuntu ARM
+name: "Build FFmpeg (built-in only, musl static) on Ubuntu ARM"
 
 on:
   workflow_dispatch:
@@ -23,10 +23,7 @@ jobs:
             musl-tools \
             pkg-config \
             yasm \
-            nasm \
-            autoconf \
-            automake \
-            libtool
+            nasm
 
       - name: Setup environment
         run: |
@@ -34,7 +31,7 @@ jobs:
           echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
           mkdir -p build_output
 
-      - name: Configure FFmpeg (built-in only)
+      - name: Configure FFmpeg
         run: |
           ./configure \
             --prefix=$(pwd)/build_output \
@@ -60,23 +57,7 @@ jobs:
             --enable-asm \
             --enable-neon \
             --enable-runtime-cpudetect \
-            --disable-libx264 \
-            --disable-libx265 \
-            --disable-libvpx \
-            --disable-libmp3lame \
-            --disable-libopus \
-            --disable-libvorbis \
-            --disable-libfdk-aac \
-            --disable-libfreetype \
-            --disable-libfontconfig \
-            --disable-libass \
-            --disable-openssl \
-            --disable-sdl2 \
-            --disable-iconv \
-            --disable-zlib \
-            --disable-bzlib \
-            --disable-lzma \
-            --extra-cflags="-static -O3 -march=armv8-a -mtune=cortex-a72" \
+            --extra-cflags="-static -O3 -march=armv8-a" \
             --extra-ldflags="-static"
 
       - name: Build FFmpeg
@@ -89,51 +70,11 @@ jobs:
           strip --strip-all build_output/bin/ffmpeg
           strip --strip-all build_output/bin/ffplay
           strip --strip-all build_output/bin/ffprobe
-          ls -lh build_output/bin/
-
-      - name: Check static linking
-        run: |
-          file build_output/bin/ffmpeg
-          ldd build_output/bin/ffmpeg 2>&1 || echo "✓ 静态链接成功（无动态依赖）"
-
-      - name: Create version info
-        run: |
-          cat > build_output/bin/README.txt << 'EOF'
-====================================
-FFmpeg Static Build (ARM64 / musl)
-====================================
-
-版本: ${{ env.FFMPEG_VERSION }}
-构建日期: ${{ env.BUILD_DATE }}
-架构: ARM64 (aarch64)
-大小: $(ls -lh build_output/bin/ffmpeg | awk '{print $5}')
-
-特性说明:
-- 仅使用 FFmpeg 内置编解码器，无外部依赖
-- 静态链接 musl libc，可在任何 ARM64 Linux 运行
-- 支持常见格式: H.264/H.265/MPEG4/AAC/MP3/FLAC/PNG/JPEG
-
-支持的编解码器:
-- 视频: h264, hevc, mpeg4, mjpeg, png, gif, bmp
-- 音频: aac, mp3, ac3, flac, pcm, vorbis
-- 字幕: srt, mov_text, ass
-
-支持的协议:
-- 文件: file, pipe
-- 网络: http, https, rtmp, rtsp, hls, tcp, udp
-
-使用方法:
-./ffmpeg -i input.mp4 output.mp4
-./ffmpeg -i video.mp4 -vn -c:a aac audio.m4a
-
-注意: 此版本不包含 libx264/libx265/libvpx 等外部编码器
-      使用内置的 h264/hevc 解码器（不支持编码）
-EOF
 
       - name: Package artifact
         run: |
           cd build_output/bin
-          tar -czf ffmpeg-builtin-arm64-musl-static.tar.gz ffmpeg ffplay ffprobe README.txt
+          tar -czf ffmpeg-builtin-arm64-musl-static.tar.gz ffmpeg ffplay ffprobe
           cd ../..
           sha256sum build_output/bin/ffmpeg-builtin-arm64-musl-static.tar.gz > checksum.txt
 
