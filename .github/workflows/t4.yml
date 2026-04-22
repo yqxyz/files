@@ -44,6 +44,99 @@ jobs:
           make -j$(nproc)
           make install
           echo "X264_PATH=$(pwd)/dist" >> $GITHUB_ENV
+
+      - name: Create x264 pkg-config file
+        run: |
+          mkdir -p $X264_PATH/lib/pkgconfig
+          echo 'prefix=${pcfiledir}/../..' > $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'exec_prefix=${prefix}' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'libdir=${exec_prefix}/lib' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'includedir=${prefix}/include' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo '' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'Name: x264' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'Description: H.264 video encoder' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'Version: 0.164.x' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'Libs: -L${libdir} -lx264 -lpthread -lm' >> $X264_PATH/lib/pkgconfig/x264.pc
+          echo 'Cflags: -I${includedir}' >> $X264_PATH/lib/pkgconfig/x264.pc
+
+      - name: Setup environment
+        run: |
+          echo "FFMPEG_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 'git-master')" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+          mkdir -p build_output
+
+      - name: Configure FFmpeg
+        run: |
+          export PKG_CONFIG_PATH="$X264_PATH/lib/pkgconfig:$PKG_CONFIG_PATH"
+          ./configure \
+            --prefix=$(pwd)/build_output \
+            --cc=musl-gcc \
+            --cxx=musl-g++ \
+            --pkg-config=pkg-config \
+            --pkg-config-flags="--static" \
+            --enable-static \
+            --disable-shared \
+            --disable-ffplay \
+            --enable-gpl \
+            --enable-libx264 \
+            --enable-ffmpeg \
+            --enable-ffprobe \
+            --enable-avdevice \
+            --enable-swscale \
+            --enable-network \
+            --enable-protocols \
+            --enable-filters \
+            --enable-encoders \
+            --enable-decoders \
+            --enable-muxers \
+            --enable-demuxers \
+            --enable-parsers \
+            --enable-bsfs \
+            --enable-asm \
+            --enable-neon \
+            --enable-runtime-cpudetect \
+            --extra-cflags="-static -O3 -march=armv8-a -I$X264_PATH/include" \
+            --extra-ldflags="-static -L$X264_PATH/lib"
+
+      - name: Build FFmpeg
+        run: |
+          make -j$(nproc)
+          make install
+
+      - name: Strip binaries
+        run: |
+          strip --strip-all build_output/bin/ffmpeg
+          strip --strip-all build_output/bin/ffprobe
+
+      - name: Verify x264 support
+        run: |
+          build_output/bin/ffmpeg -encoders 2>/dev/null | grep libx264 || echo "Warning: libx264 not found"
+          build_output/bin/ffmpeg -version | head -5
+
+      - name: Package artifact
+        run: |
+          cd build_output/bin
+          tar -czf ffmpeg-x264-arm64-musl-static.tar.gz ffmpeg ffprobe
+          cd ../..
+          sha256sum build_output/bin/ffmpeg-x264-arm64-musl-static.tar.gz > checksum.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-x264-arm64-musl-static
+          path: |
+            build_output/bin/ffmpeg-x264-arm64-musl-static.tar.gz
+            checksum.txt
+          retention-days: 90            --prefix=$(pwd)/dist \
+            --host=aarch64-linux-musl \
+            --enable-static \
+            --disable-cli \
+            --disable-asm \
+            --cross-prefix= \
+            --extra-cflags="-static -O3 -march=armv8-a"
+          make -j$(nproc)
+          make install
+          echo "X264_PATH=$(pwd)/dist" >> $GITHUB_ENV
           # 手动创建 pkg-config 文件
           mkdir -p $(pwd)/dist/lib/pkgconfig
           cat > $(pwd)/dist/lib/pkgconfig/x264.pc << 'EOF'
