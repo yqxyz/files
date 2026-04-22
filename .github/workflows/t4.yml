@@ -39,25 +39,10 @@ jobs:
             --enable-static \
             --disable-cli \
             --disable-asm \
-            --cross-prefix= \
             --extra-cflags="-static -O3 -march=armv8-a"
           make -j$(nproc)
           make install
           echo "X264_PATH=$(pwd)/dist" >> $GITHUB_ENV
-
-      - name: Create x264 pkg-config file
-        run: |
-          mkdir -p $X264_PATH/lib/pkgconfig
-          echo 'prefix=${pcfiledir}/../..' > $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'exec_prefix=${prefix}' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'libdir=${exec_prefix}/lib' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'includedir=${prefix}/include' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo '' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'Name: x264' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'Description: H.264 video encoder' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'Version: 0.164.x' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'Libs: -L${libdir} -lx264 -lpthread -lm' >> $X264_PATH/lib/pkgconfig/x264.pc
-          echo 'Cflags: -I${includedir}' >> $X264_PATH/lib/pkgconfig/x264.pc
 
       - name: Setup environment
         run: |
@@ -67,13 +52,10 @@ jobs:
 
       - name: Configure FFmpeg
         run: |
-          export PKG_CONFIG_PATH="$X264_PATH/lib/pkgconfig:$PKG_CONFIG_PATH"
           ./configure \
             --prefix=$(pwd)/build_output \
             --cc=musl-gcc \
             --cxx=musl-g++ \
-            --pkg-config=pkg-config \
-            --pkg-config-flags="--static" \
             --enable-static \
             --disable-shared \
             --disable-ffplay \
@@ -96,7 +78,8 @@ jobs:
             --enable-neon \
             --enable-runtime-cpudetect \
             --extra-cflags="-static -O3 -march=armv8-a -I$X264_PATH/include" \
-            --extra-ldflags="-static -L$X264_PATH/lib"
+            --extra-ldflags="-static -L$X264_PATH/lib" \
+            --extra-libs="-lx264 -lpthread -lm"
 
       - name: Build FFmpeg
         run: |
@@ -110,8 +93,12 @@ jobs:
 
       - name: Verify x264 support
         run: |
-          build_output/bin/ffmpeg -encoders 2>/dev/null | grep libx264 || echo "Warning: libx264 not found"
-          build_output/bin/ffmpeg -version | head -5
+          echo "=== Checking encoders ==="
+          build_output/bin/ffmpeg -encoders 2>/dev/null | grep -E "(libx264|h264)"
+          echo "=== Version info ==="
+          build_output/bin/ffmpeg -version | head -10
+          echo "=== Static check ==="
+          file build_output/bin/ffmpeg | grep static
 
       - name: Package artifact
         run: |
@@ -126,101 +113,5 @@ jobs:
           name: ffmpeg-x264-arm64-musl-static
           path: |
             build_output/bin/ffmpeg-x264-arm64-musl-static.tar.gz
-            checksum.txt
-          retention-days: 90            --prefix=$(pwd)/dist \
-            --host=aarch64-linux-musl \
-            --enable-static \
-            --disable-cli \
-            --disable-asm \
-            --cross-prefix= \
-            --extra-cflags="-static -O3 -march=armv8-a"
-          make -j$(nproc)
-          make install
-          echo "X264_PATH=$(pwd)/dist" >> $GITHUB_ENV
-          # 手动创建 pkg-config 文件
-          mkdir -p $(pwd)/dist/lib/pkgconfig
-          cat > $(pwd)/dist/lib/pkgconfig/x264.pc << 'EOF'
-prefix=${pcfiledir}/../..
-exec_prefix=${prefix}
-libdir=${exec_prefix}/lib
-includedir=${prefix}/include
-
-Name: x264
-Description: H.264 video encoder
-Version: 0.164.x
-Libs: -L${libdir} -lx264 -lpthread -lm
-Cflags: -I${includedir}
-EOF
-
-      - name: Setup environment
-        run: |
-          echo "FFMPEG_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 'git-master')" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
-          mkdir -p build_output
-
-      - name: Configure FFmpeg
-        run: |
-          export PKG_CONFIG_PATH="$X264_PATH/lib/pkgconfig:$PKG_CONFIG_PATH"
-          ./configure \
-            --prefix=$(pwd)/build_output \
-            --cc=musl-gcc \
-            --cxx=musl-g++ \
-            --pkg-config=pkg-config \
-            --pkg-config-flags="--static" \
-            --enable-static \
-            --disable-shared \
-            --disable-ffplay \
-            --enable-gpl \
-            --enable-libx264 \
-            --disable-ffmpeg \
-            --disable-ffprobe \
-            --disable-avdevice \
-            --disable-swscale \
-            --disable-network \
-            --disable-protocols \
-            --disable-filters \
-            --disable-encoders \
-            --disable-decoders \
-            --disable-muxers \
-            --disable-demuxers \
-            --disable-parsers \
-            --disable-bsfs \
-            --enable-encoder=libx264 \
-            --enable-decoder=h264 \
-            --enable-parser=h264 \
-            --enable-muxer=mp4 \
-            --enable-demuxer=mov \
-            --enable-protocol=file \
-            --extra-cflags="-static -O3 -march=armv8-a -I$X264_PATH/include" \
-            --extra-ldflags="-static -L$X264_PATH/lib" \
-            --extra-libs="-lpthread -lm"
-
-      - name: Build FFmpeg
-        run: |
-          make -j$(nproc)
-          make install
-
-      - name: Strip binaries
-        run: |
-          strip --strip-all build_output/bin/ffmpeg
-
-      - name: Verify x264 support
-        run: |
-          build_output/bin/ffmpeg -encoders 2>/dev/null | grep libx264 || echo "Warning: libx264 not found"
-          build_output/bin/ffmpeg -version
-
-      - name: Package artifact
-        run: |
-          cd build_output/bin
-          tar -czf ffmpeg-x264-only-arm64-musl-static.tar.gz ffmpeg
-          cd ../..
-          sha256sum build_output/bin/ffmpeg-x264-only-arm64-musl-static.tar.gz > checksum.txt
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-x264-only-arm64-musl-static
-          path: |
-            build_output/bin/ffmpeg-x264-only-arm64-musl-static.tar.gz
             checksum.txt
           retention-days: 90
